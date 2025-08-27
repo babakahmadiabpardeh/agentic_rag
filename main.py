@@ -47,7 +47,11 @@ def process_and_ingest_files(uploaded_files, collection_name):
         else:
             st.warning(f"Unsupported file type: {uploaded_file.name}")
             continue
-        documents.extend(loader.load())
+        
+        loaded_documents = loader.load()
+        for doc in loaded_documents:
+            doc.metadata = {"source": uploaded_file.name}
+        documents.extend(loaded_documents)
 
     if not documents:
         return
@@ -78,7 +82,7 @@ def get_context_retriever_chain(vector_store):
 def get_conversational_rag_chain(retriever_chain):
     llm = ChatOllama(model=llm_model_name)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "Answer the user's questions based on the below context:\n\n{context}"),
+        ("system", "Answer the user's questions based on the below context. Also provide the source document for each piece of information:\n\n{context}"),
         MessagesPlaceholder(variable_name="chat_history"),
         ("user", "{input}"),
     ])
@@ -125,8 +129,17 @@ if user_query is not None and user_query.strip() != "":
                 "chat_history": st.session_state.chat_history,
                 "input": user_query
             })
+            
+            answer = response['answer']
+            source_documents = response['context']
+            
+            if source_documents:
+                answer += "\n\n**Sources:**"
+                unique_sources = set(doc.metadata.get('source', 'Unknown') for doc in source_documents)
+                for source in unique_sources:
+                    answer += f"\n- {source}"
 
-            st.session_state.chat_history.append(AIMessage(content=response['answer']))
+            st.session_state.chat_history.append(AIMessage(content=answer))
 
 # Display the chat history
 for message in st.session_state.chat_history:
