@@ -16,9 +16,15 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 load_dotenv()
 
 # Get models and collection name from environment variables
-embedding_model_name = os.getenv("EMBEDDING_MODEL")
-llm_model_name = os.getenv("LLM_MODEL")
-CHROMA_COLLECTION_NAME = "rag-chroma-collection"
+embedding_model_name = os.getenv("EMBEDDING_MODEL", "all-minilm")
+llm_model_name = os.getenv("LLM_MODEL", "phi3")
+CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "rag-chroma-collection")
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 1000))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 200))
+RETRIEVER_K = int(os.getenv("RETRIEVER_K", 4))
+SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "Answer the user\'s questions based on the below context. Also provide the source document for each piece of information:\n\n{context}")
+RETRIEVER_PROMPT = os.getenv("RETRIEVER_PROMPT", "Given the above conversation, generate a search query to look up in order to get information relevant to the conversation")
+
 
 # App config
 st.set_page_config(page_title="Chat with your documents", page_icon="💬")
@@ -56,7 +62,7 @@ def process_and_ingest_files(uploaded_files, collection_name):
     if not documents:
         return
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     document_chunks = text_splitter.split_documents(documents)
 
     # This will create the collection if it doesn't exist, and ingest the documents.
@@ -70,11 +76,11 @@ def process_and_ingest_files(uploaded_files, collection_name):
 
 def get_context_retriever_chain(vector_store):
     llm = ChatOllama(model=llm_model_name)
-    retriever = vector_store.as_retriever()
+    retriever = vector_store.as_retriever(search_kwargs={'k': RETRIEVER_K})
     prompt = ChatPromptTemplate.from_messages([
         MessagesPlaceholder(variable_name="chat_history"),
         ("user", "{input}"),
-        ("user", "Given the above conversation, generate a search query to look up in order to get information relevant to the conversation")
+        ("user", RETRIEVER_PROMPT)
     ])
     retriever_chain = create_history_aware_retriever(llm, retriever, prompt)
     return retriever_chain
@@ -82,7 +88,7 @@ def get_context_retriever_chain(vector_store):
 def get_conversational_rag_chain(retriever_chain):
     llm = ChatOllama(model=llm_model_name)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "Answer the user's questions based on the below context. Also provide the source document for each piece of information:\n\n{context}"),
+        ("system", SYSTEM_PROMPT),
         MessagesPlaceholder(variable_name="chat_history"),
         ("user", "{input}"),
     ])

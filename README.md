@@ -81,6 +81,19 @@ This project implements a Retrieval-Augmented Generation (RAG) application using
 
 3.  Open your web browser to the local URL provided by Streamlit.
 
+## Configuration
+
+The application can be configured using the `.env` file. The following variables are available:
+
+-   `EMBEDDING_MODEL`: The name of the embedding model to use from Ollama. Defaults to `all-minilm`.
+-   `LLM_MODEL`: The name of the language model to use from Ollama. Defaults to `phi3`.
+-   `CHROMA_COLLECTION_NAME`: The name of the collection in ChromaDB. Defaults to `rag-chroma-collection`.
+-   `CHUNK_SIZE`: The size of the chunks to split the documents into. Defaults to `1000`.
+-   `CHUNK_OVERLAP`: The overlap between chunks. Defaults to `200`.
+-   `RETRIEVER_K`: The number of documents to retrieve from the vector store. Defaults to `4`.
+-   `SYSTEM_PROMPT`: The system prompt for the conversational RAG chain.
+-   `RETRIEVER_PROMPT`: The prompt for the history-aware retriever.
+
 ## How to Use the App
 
 1.  Use the sidebar to upload one or more `.pdf` or `.txt` files.
