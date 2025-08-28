@@ -1,7 +1,6 @@
 import streamlit as st
 import os
 import chromadb
-from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -12,18 +11,21 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 
-# Load environment variables
-load_dotenv()
+import yaml
 
-# Get models and collection name from environment variables
-embedding_model_name = os.getenv("EMBEDDING_MODEL", "all-minilm")
-llm_model_name = os.getenv("LLM_MODEL", "phi3")
-CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "rag-chroma-collection")
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 1000))
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 200))
-RETRIEVER_K = int(os.getenv("RETRIEVER_K", 4))
-SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "Answer the user\'s questions based on the below context. Also provide the source document for each piece of information:\n\n{context}")
-RETRIEVER_PROMPT = os.getenv("RETRIEVER_PROMPT", "Given the above conversation, generate a search query to look up in order to get information relevant to the conversation")
+# Load configuration from config.yaml
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+embedding_model_name = config.get("embedding_model", "all-minilm")
+llm_model_name = config.get("llm_model", "phi3")
+CHROMA_COLLECTION_NAME = config.get("chroma_collection_name", "rag-chroma-collection")
+CHUNK_SIZE = config.get("chunk_size", 1000)
+CHUNK_OVERLAP = config.get("chunk_overlap", 200)
+RETRIEVER_K = config.get("retriever_k", 4)
+SYSTEM_PROMPT = config.get("system_prompt", "Answer the user's questions based on the below context. Also provide the source document for each piece of information:\n\n{context}")
+RETRIEVER_PROMPT = config.get("retriever_prompt", "Given the above conversation, generate a search query to look up in order to get information relevant to the conversation")
+
 
 
 # App config

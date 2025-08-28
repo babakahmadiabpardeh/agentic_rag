@@ -62,12 +62,12 @@ This project implements a Retrieval-Augmented Generation (RAG) application using
 
 ### Step 3: Configure Your Models
 
-1.  The project uses an `.env` file to manage the Ollama model names.
-2.  If you want to use different models from the default, edit the `.env` file:
+1.  The project uses a `config.yaml` file to manage the configuration.
+2.  If you want to use different models from the default, edit the `config.yaml` file:
 
-    ```
-    EMBEDDING_MODEL=your-embedding-model
-    LLM_MODEL=your-llm-model
+    ```yaml
+    embedding_model: your-embedding-model
+    llm_model: your-llm-model
     ```
 
 ## How to Run the Application
@@ -91,8 +91,8 @@ The application can be configured using the `.env` file. The following variables
 -   `CHUNK_SIZE`: The size of the chunks to split the documents into. Defaults to `1000`.
 -   `CHUNK_OVERLAP`: The overlap between chunks. Defaults to `200`.
 -   `RETRIEVER_K`: The number of documents to retrieve from the vector store. Defaults to `4`.
--   `SYSTEM_PROMPT`: The system prompt for the conversational RAG chain.
--   `RETRIEVER_PROMPT`: The prompt for the history-aware retriever.
+-   `SYSTEM_PROMPT`: The system prompt for the conversational RAG chain. You can use multi-line values by enclosing the prompt in quotes.
+-   `RETRIEVER_PROMPT`: The prompt for the history-aware retriever. You can use multi-line values by enclosing the prompt in quotes.
 
 ## How to Use the App
 
