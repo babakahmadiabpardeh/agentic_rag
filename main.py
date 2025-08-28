@@ -1,159 +1,110 @@
 import streamlit as st
-import os
-import chromadb
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from utils import ChromaDBManager, FileProcessor, LangChainHelper, Config
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
-from langchain_ollama import OllamaEmbeddings
-from langchain_ollama.chat_models import ChatOllama
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.chains import create_history_aware_retriever, create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
 
-import yaml
+def render_sidebar(chromadb_manager, file_processor, config):
+    with st.sidebar:
+        st.header("Upload Documents")
+        uploaded_files = st.file_uploader("Upload your PDF or TXT files", accept_multiple_files=True, type=['pdf', 'txt'])
 
-# Load configuration from config.yaml
-with open("config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+        processed_files = chromadb_manager.get_processed_files()
 
-embedding_model_name = config.get("embedding_model", "all-minilm")
-llm_model_name = config.get("llm_model", "phi3")
-CHROMA_COLLECTION_NAME = config.get("chroma_collection_name", "rag-chroma-collection")
-CHUNK_SIZE = config.get("chunk_size", 1000)
-CHUNK_OVERLAP = config.get("chunk_overlap", 200)
-RETRIEVER_K = config.get("retriever_k", 4)
-SYSTEM_PROMPT = config.get("system_prompt", "Answer the user's questions based on the below context. Also provide the source document for each piece of information:\n\n{context}")
-RETRIEVER_PROMPT = config.get("retriever_prompt", "Given the above conversation, generate a search query to look up in order to get information relevant to the conversation")
+        new_files = []
+        if uploaded_files:
+            st.subheader("Uploaded Files")
+            for uploaded_file in uploaded_files:
+                if uploaded_file.name in processed_files:
+                    st.write(f"- {uploaded_file.name} (Already Processed)")
+                else:
+                    st.write(f"- {uploaded_file.name}")
+                    new_files.append(uploaded_file)
 
+        if st.button("Process", disabled=not new_files) and new_files:
+            with st.spinner("Processing documents..."):
+                documents = file_processor.process_files(new_files)
+                
+                text_splitter = RecursiveCharacterTextSplitter(chunk_size=config.chunk_size, chunk_overlap=config.chunk_overlap)
+                document_chunks = text_splitter.split_documents(documents)
 
+                chromadb_manager.ingest_documents(document_chunks, config.chroma_collection_name, config.embedding_model)
+                
+                for new_file in new_files:
+                    chromadb_manager.add_processed_file(new_file.name)
 
-# App config
-st.set_page_config(page_title="Chat with your documents", page_icon="💬")
-st.title("Chat with your documents")
+                st.session_state.collection_name = config.chroma_collection_name
+                st.success("Documents processed successfully!")
 
-
-def process_and_ingest_files(uploaded_files, collection_name):
-    """Processes uploaded files and ingests them into a Chroma collection."""
-    if not uploaded_files:
-        return
-
-    documents = []
-    temp_dir = "./temp"
-    if not os.path.exists(temp_dir):
-        os.makedirs(temp_dir)
-
-    for uploaded_file in uploaded_files:
-        temp_file_path = os.path.join(temp_dir, uploaded_file.name)
-        with open(temp_file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        if uploaded_file.name.endswith('.pdf'):
-            loader = PyPDFLoader(temp_file_path)
-        elif uploaded_file.name.endswith('.txt'):
-            loader = TextLoader(temp_file_path)
-        else:
-            st.warning(f"Unsupported file type: {uploaded_file.name}")
-            continue
-        
-        loaded_documents = loader.load()
-        for doc in loaded_documents:
-            doc.metadata = {"source": uploaded_file.name}
-        documents.extend(loaded_documents)
-
-    if not documents:
-        return
-
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-    document_chunks = text_splitter.split_documents(documents)
-
-    # This will create the collection if it doesn't exist, and ingest the documents.
-    Chroma.from_documents(
-        documents=document_chunks,
-        embedding=OllamaEmbeddings(model=embedding_model_name),
-        collection_name=collection_name,
-        client=chromadb.HttpClient(host="localhost", port=8000)
-    )
-    st.session_state.collection_name = collection_name
-
-def get_context_retriever_chain(vector_store):
-    llm = ChatOllama(model=llm_model_name)
-    retriever = vector_store.as_retriever(search_kwargs={'k': RETRIEVER_K})
-    prompt = ChatPromptTemplate.from_messages([
-        MessagesPlaceholder(variable_name="chat_history"),
-        ("user", "{input}"),
-        ("user", RETRIEVER_PROMPT)
-    ])
-    retriever_chain = create_history_aware_retriever(llm, retriever, prompt)
-    return retriever_chain
-
-def get_conversational_rag_chain(retriever_chain):
-    llm = ChatOllama(model=llm_model_name)
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
-        MessagesPlaceholder(variable_name="chat_history"),
-        ("user", "{input}"),
-    ])
-    stuff_documents_chain = create_stuff_documents_chain(llm, prompt)
-    return create_retrieval_chain(retriever_chain, stuff_documents_chain)
-
-# Sidebar for file uploads
-with st.sidebar:
-    st.header("Upload Documents")
-    uploaded_files = st.file_uploader("Upload your PDF or TXT files and click 'Process'", accept_multiple_files=True, type=['pdf', 'txt'])
-
-    if st.button("Process") and uploaded_files:
-        with st.spinner("Processing documents..."):
-            process_and_ingest_files(uploaded_files, CHROMA_COLLECTION_NAME)
-            st.success("Documents processed successfully!")
-
-# Initialize session state
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = [AIMessage(content="Hello! I'm your RAG agent. Upload some documents and I'll answer your questions about them.")]
-if "collection_name" not in st.session_state:
-    st.session_state.collection_name = None
-
-# Chat input from the user
-user_query = st.chat_input("Type your message here...")
-if user_query is not None and user_query.strip() != "":
-    if st.session_state.collection_name is None:
-        st.warning("Please upload and process documents before asking questions.")
-    else:
+def handle_chat_input(chromadb_manager, langchain_helper, config):
+    user_query = st.chat_input("Type your message here...")
+    if user_query is not None and user_query.strip() != "":
         st.session_state.chat_history.append(HumanMessage(content=user_query))
 
-        with st.spinner("Thinking..."):
-            # Connect to the existing vector store
-            client = chromadb.HttpClient(host="localhost", port=8000)
-            vector_store = Chroma(
-                client=client,
-                collection_name=st.session_state.collection_name,
-                embedding_function=OllamaEmbeddings(model=embedding_model_name)
-            )
+        if st.session_state.collection_name is None:
+            st.session_state.chat_history.append(AIMessage(content="I don't have any documents to reference. Please upload some documents first."))
+        else:
+            with st.spinner("Thinking..."):
+                vector_store = chromadb_manager.get_vector_store(st.session_state.collection_name, config.embedding_model)
+                retriever_chain = langchain_helper.get_context_retriever_chain(vector_store)
+                conversational_rag_chain = langchain_helper.get_conversational_rag_chain(retriever_chain)
 
-            retriever_chain = get_context_retriever_chain(vector_store)
-            conversational_rag_chain = get_conversational_rag_chain(retriever_chain)
+                response = conversational_rag_chain.invoke({
+                    "chat_history": st.session_state.chat_history,
+                    "input": user_query
+                })
+                
+                answer = response['answer']
+                source_documents = response['context']
+                
+                if source_documents:
+                    answer += "\n\n**Sources:**"
+                    unique_sources = set(doc.metadata.get('source', 'Unknown') for doc in source_documents)
+                    for source in unique_sources:
+                        answer += f"\n- {source}"
 
-            response = conversational_rag_chain.invoke({
-                "chat_history": st.session_state.chat_history,
-                "input": user_query
-            })
-            
-            answer = response['answer']
-            source_documents = response['context']
-            
-            if source_documents:
-                answer += "\n\n**Sources:**"
-                unique_sources = set(doc.metadata.get('source', 'Unknown') for doc in source_documents)
-                for source in unique_sources:
-                    answer += f"\n- {source}"
+                st.session_state.chat_history.append(AIMessage(content=answer))
 
-            st.session_state.chat_history.append(AIMessage(content=answer))
+def display_chat_history():
+    for message in st.session_state.chat_history:
+        if isinstance(message, AIMessage):
+            with st.chat_message("AI"):
+                st.write(message.content)
+        elif isinstance(message, HumanMessage):
+            with st.chat_message("Human"):
+                st.write(message.content)
 
-# Display the chat history
-for message in st.session_state.chat_history:
-    if isinstance(message, AIMessage):
-        with st.chat_message("AI"):
-            st.write(message.content)
-    elif isinstance(message, HumanMessage):
-        with st.chat_message("Human"):
-            st.write(message.content)
+def main():
+    # App config
+    st.set_page_config(page_title="Chat with your documents", page_icon="💬")
+    st.title("Chat with your documents")
+
+    # Load configuration
+    config = Config()
+
+    # Initialize helpers and managers
+    chromadb_manager = ChromaDBManager()
+    file_processor = FileProcessor()
+    langchain_helper = LangChainHelper(
+        config.llm_model,
+        config.retriever_k,
+        config.system_prompt,
+        config.retriever_prompt
+    )
+
+    # Initialize session state
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = [AIMessage(content="Hello! I'm your RAG agent. Upload some documents and I'll answer your questions about them.")]
+    if "collection_name" not in st.session_state:
+        try:
+            chromadb_manager.client.get_collection(name=config.chroma_collection_name)
+            st.session_state.collection_name = config.chroma_collection_name
+        except Exception:
+            st.session_state.collection_name = None
+
+    # Render UI and handle logic
+    render_sidebar(chromadb_manager, file_processor, config)
+    handle_chat_input(chromadb_manager, langchain_helper, config)
+    display_chat_history()
+
+if __name__ == "__main__":
+    main()
