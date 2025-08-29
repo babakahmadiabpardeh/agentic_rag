@@ -1,6 +1,6 @@
 import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage
-from utils import ChromaDBManager, FileProcessor, LangChainHelper, Config
+from utils import ChromaDBManager, FileProcessor, LangChainHelper, Config, AgentManager
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 def render_sidebar(chromadb_manager, file_processor, config):
@@ -35,7 +35,7 @@ def render_sidebar(chromadb_manager, file_processor, config):
                 st.session_state.collection_name = config.chroma_collection_name
                 st.success("Documents processed successfully!")
 
-def handle_chat_input(chromadb_manager, langchain_helper, config):
+def handle_chat_input(chromadb_manager, langchain_helper, agent_manager, config):
     user_query = st.chat_input("Type your message here...")
     if user_query is not None and user_query.strip() != "":
         st.session_state.chat_history.append(HumanMessage(content=user_query))
@@ -45,22 +45,15 @@ def handle_chat_input(chromadb_manager, langchain_helper, config):
         else:
             with st.spinner("Thinking..."):
                 vector_store = chromadb_manager.get_vector_store(st.session_state.collection_name, config.embedding_model)
-                retriever_chain = langchain_helper.get_context_retriever_chain(vector_store)
-                conversational_rag_chain = langchain_helper.get_conversational_rag_chain(retriever_chain)
+                retriever = langchain_helper.get_retriever(vector_store)
+                agent_executor = agent_manager.get_agent(retriever)
 
-                response = conversational_rag_chain.invoke({
+                response = agent_executor.invoke({
                     "chat_history": st.session_state.chat_history,
                     "input": user_query
                 })
                 
-                answer = response['answer']
-                source_documents = response['context']
-                
-                if source_documents:
-                    answer += "\n\n**Sources:**"
-                    unique_sources = set(doc.metadata.get('source', 'Unknown') for doc in source_documents)
-                    for source in unique_sources:
-                        answer += f"\n- {source}"
+                answer = response['output']
 
                 st.session_state.chat_history.append(AIMessage(content=answer))
 
@@ -88,8 +81,10 @@ def main():
         config.llm_model,
         config.retriever_k,
         config.system_prompt,
-        config.retriever_prompt
+        config.retriever_prompt,
+        config.retriever_type
     )
+    agent_manager = AgentManager(config.llm_model, config.system_prompt)
 
     # Initialize session state
     if "chat_history" not in st.session_state:
@@ -103,7 +98,7 @@ def main():
 
     # Render UI and handle logic
     render_sidebar(chromadb_manager, file_processor, config)
-    handle_chat_input(chromadb_manager, langchain_helper, config)
+    handle_chat_input(chromadb_manager, langchain_helper, agent_manager, config)
     display_chat_history()
 
 if __name__ == "__main__":

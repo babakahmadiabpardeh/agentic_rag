@@ -4,6 +4,7 @@ chroma_collection_name: rag-chroma-collection
 chunk_size: 1000
 chunk_overlap: 200
 retriever_k: 4
+retriever_type: mmr
 system_prompt: |
   Answer the user's questions based on the below context. Also provide the source document for each piece of information:
 
