@@ -117,14 +117,20 @@ class AgentManager:
         self.system_prompt = system_prompt
 
     def get_agent(self, retriever):
+        document_prompt = PromptTemplate(
+            input_variables=["page_content", "source"],
+            template="Content: {page_content}\nSource: {source}"
+        )
+
         tool = create_retriever_tool(
             retriever,
             "document_retriever",
-            "This tool is for retrieving documents."
+            "This tool is for retrieving documents.",
+            document_prompt=document_prompt
         )
         tools = [tool]
         
-        template = '''Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer. Use three sentences maximum and keep the answer as concise as possible. You have access to the following tools:
+        template = '''Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer. Use three sentences maximum and keep the answer as concise as possible. Also, include the source of the information in your answer, and list each source only once. You have access to the following tools:
 
 {tools}
 
@@ -137,7 +143,7 @@ Action Input: the input to the action
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat N times)
 Thought: I now know the final answer
-Final Answer: the final answer to the original input question
+Final Answer: the final answer to the original input question, including the source of the information. List each source only once.
 
 Begin!
 
@@ -147,6 +153,6 @@ Thought:{agent_scratchpad}'''
         prompt = PromptTemplate.from_template(template)
         
         agent = create_react_agent(self.llm, tools, prompt)
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
         
         return agent_executor
